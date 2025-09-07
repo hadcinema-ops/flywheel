@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Phantom Connect Debug</title>
+  <style>
+    body{font-family:system-ui,Arial;margin:0;padding:24px;background:#0b0f1a;color:#fff}
+    h1{margin:0 0 12px}
+    #log{white-space:pre-wrap;background:#111827;border:1px solid #374151;border-radius:8px;padding:12px;height:260px;overflow:auto}
+    button{padding:10px 14px;border-radius:10px;border:0;background:#8b5cf6;color:#fff;font-weight:700;cursor:pointer}
+    .row{display:flex;gap:12px;align-items:center;margin:12px 0}
+    .ok{color:#22c55e}
+    .muted{color:#94a3b8}
+    #floating{position:fixed;right:12px;bottom:12px;z-index:999999;background:#22c55e}
+  </style>
+  <script>
+    // Simple logger
+    function log(msg){ const el=document.getElementById('log'); el.textContent += msg + "\n"; el.scrollTop = el.scrollHeight; console.log(msg); }
+    function getProvider(){
+      if (window?.solana?.isPhantom) return window.solana;
+      if (window?.phantom?.solana?.isPhantom) return window.phantom.solana;
+      return null;
+    }
+    async function tryConnect({onlyIfTrusted=false}={}){
+      const p = getProvider();
+      if(!p){ log("Provider: NOT FOUND"); alert("Phantom not detected"); return; }
+      log("Provider: FOUND");
+      try{
+        const resp = await p.connect({onlyIfTrusted});
+        const pk = resp?.publicKey?.toString?.() || p.publicKey?.toString?.();
+        log("connect() resolved: " + (pk || "<no pk>"));
+        document.getElementById('pk').textContent = pk || "—";
+      }catch(e){
+        log("connect() threw: " + (e?.message || e));
+        alert("Connect failed/cancelled");
+      }
+    }
+    function bind(){
+      document.getElementById('btn-connect').addEventListener('click', ()=>tryConnect({onlyIfTrusted:false}));
+      document.getElementById('btn-silent').addEventListener('click', ()=>tryConnect({onlyIfTrusted:true}));
+      // Floating fallback that should never be overlapped
+      document.getElementById('floating').addEventListener('click', ()=>tryConnect({onlyIfTrusted:false}), {passive:false,capture:true});
+      const p = getProvider();
+      if (p){
+        p.on?.('connect', (k)=> log('event: connect ' + (k?.toString?.() || '')) );
+        p.on?.('disconnect', ()=> log('event: disconnect') );
+        p.on?.('accountChanged', (k)=> log('event: accountChanged ' + (k?.toString?.() || '')) );
+      }
+      // Global capture listener to verify clicks reach the document
+      document.addEventListener('click', (e)=>{
+        if (e.target.id === 'btn-connect') log('document capture: btn-connect clicked');
+      }, {capture:true});
+    }
+    window.addEventListener('DOMContentLoaded', bind);
+  </script>
+</head>
+<body>
+  <h1>Phantom Connect Debug</h1>
+  <div class="row">
+    <button id="btn-connect">Connect (interactive)</button>
+    <button id="btn-silent">Connect (onlyIfTrusted)</button>
+  </div>
+  <div class="row"><span class="muted">Public key:</span> <span id="pk" class="ok">—</span></div>
+  <div id="log"></div>
+  <button id="floating">Floating Connect</button>
+</body>
+</html>
