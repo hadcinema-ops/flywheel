@@ -1,0 +1,10 @@
+[build]
+  publish = "frontend"
+
+[[scheduled.functions]]
+  name = "flywheel-cron"
+  cron = "*/20 * * * *"
+
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["@solana/web3.js", "bs58"]
