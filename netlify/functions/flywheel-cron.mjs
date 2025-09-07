@@ -1,5 +1,8 @@
-import { Connection } from "@solana/web3.js";
 
+// netlify/functions/flywheel-cron.mjs (patched)
+/**
+ * Netlify Scheduled Function (v2). No request object here; just return a Response.
+ */
 let STATS = globalThis.__STATS || { totalSOLClaimed: 0, totalTokensBought: "0", totalTokensBurned: "0", lastRun: undefined, activity: [] };
 globalThis.__STATS = STATS;
 
@@ -17,14 +20,17 @@ const ENV = {
   DRY_RUN: process.env.DRY_RUN === "true"
 };
 
-export default async (event, context) => {
-  // Scheduled invocation: run the same pipeline
+export default async () => {
   await runOnce(ENV.DRY_RUN);
-  return new Response("ok");
+  return new Response("ok", { status: 200 });
 };
 
 async function runOnce(dry){
-  const connection = new Connection(ENV.RPC_URL, "confirmed");
+  if (!ENV.RPC_URL || !ENV.DEV_WALLET || !ENV.TOKEN_MINT) {
+    STATS.activity.unshift({ title: "Cron skipped (missing env)", desc: JSON.stringify({ RPC: !!ENV.RPC_URL, DEV: !!ENV.DEV_WALLET, MINT: !!ENV.TOKEN_MINT }) });
+    STATS.lastRun = new Date().toISOString();
+    return;
+  }
   const claim = await claimCreatorFees(ENV.PUMPPORTAL_API, ENV.DEV_WALLET);
   const claimedSol = Number(claim?.amountSol || 0);
   if (claimedSol <= ENV.MIN_BUY_SOL) {
@@ -44,15 +50,20 @@ async function runOnce(dry){
     // TODO: sign & submit swap
   }
   // TODO: burn tokens
+
   STATS.totalSOLClaimed += claimedSol;
   STATS.activity.unshift({ title: "Cron cycle complete", desc: `claimed ${claimedSol.toFixed(4)} SOL → swapped ~${buySol.toFixed(4)} SOL` });
   STATS.lastRun = new Date().toISOString();
 }
 
 async function claimCreatorFees(apiBase, devWallet){
-  const res = await fetch(`${apiBase}/claim-creator-fees`, { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ recipient: devWallet }) });
-  if (!res.ok) return { amountSol: 0 };
-  return await res.json();
+  try {
+    const res = await fetch(`${apiBase}/claim-creator-fees`, { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ recipient: devWallet }) });
+    if (!res.ok) return { amountSol: 0 };
+    return await res.json();
+  } catch {
+    return { amountSol: 0 };
+  }
 }
 async function marketBuy(jupApi, amountSol, devWallet, tokenMint, slippageBps){
   const inLamports = Math.floor(amountSol * 1e9);
