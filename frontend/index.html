@@ -3,14 +3,44 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Solana Auto Flywheel</title>
-  <link rel="stylesheet" href="./styles.css"/>
-  <script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
-  <script>
-    window.phantomDetected = () => !!window?.solana?.isPhantom;
-  </script>
+  <title>Solana Auto Flywheel — Inline Build</title>
+  <style>
+    :root { --bg:#0c0b10; --card:#151320; --text:#fff; --muted:#a9a6bb; --pri:#8b5cf6; --ok:#22c55e; --warn:#f59e0b; }
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(1200px 600px at 70% -10%, #221a3d 0%, #0c0b10 60%);color:var(--text);font:16px/1.35 Inter,system-ui,Arial}
+    .topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:rgba(0,0,0,.35);backdrop-filter:blur(6px);position:sticky;top:0;z-index:9999}
+    .brand{display:flex;gap:12px;align-items:center}
+    .nav{display:flex;gap:10px;align-items:center}
+    .nav a{color:#ddd;text-decoration:none;padding:8px 10px;border-radius:8px}
+    .nav a:hover{background:rgba(255,255,255,.06)}
+    .btn{padding:10px 14px;border-radius:12px;border:0;cursor:pointer;font-weight:700}
+    .btn.primary{background:var(--pri);color:#fff}
+    .btn.success{background:var(--ok)}
+    .btn.warn{background:#ef4444}
+    .btn.secondary{background:#334155}
+    .btn.disabled{opacity:.5;cursor:not-allowed}
+    .container{max-width:1100px;margin:40px auto;padding:0 16px}
+    .hero h2{font-size:28px;margin:0 0 8px}
+    .stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:18px}
+    .card{background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:16px}
+    .k{color:var(--muted);font-size:13px}
+    .v{font-size:24px;font-weight:800;margin-top:6px}
+    .actions{margin:26px 0}
+    .row{display:flex;gap:10px;align-items:center;margin:10px 0}
+    .feed ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:360px;overflow:auto}
+    .feed li{background:rgba(255,255,255,.04);border-radius:12px;padding:10px}
+    .footer{opacity:.8;text-align:center;margin:30px 0}
+    .hidden{display:none}
+    .muted{color:var(--muted)}
+    .small{font-size:12px}
+    #status{background:#0b1220;border-bottom:1px solid rgba(255,255,255,.08);padding:8px 16px;font-size:13px;display:flex;gap:12px;align-items:center}
+    #status .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:#ef4444}
+    #status.ok .dot{background:#22c55e}
+    #status .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+  </style>
 </head>
 <body>
+  <div id="status"><span class="dot"></span><span id="status-text">Checking wallet…</span></div>
+
   <header class="topbar">
     <div class="brand">
       <h1>Solana Auto Buy &amp; Burn</h1>
@@ -34,17 +64,15 @@
 
     <section class="actions">
       <div id="dev-controls" class="card hidden">
-        <h3>Dev Controls (locked)</h3>
-        <p class="muted">Only visible when your dev wallet is connected.</p>
+        <h3>Dev Controls</h3>
+        <p class="muted small">Connected: <span id="who" class="mono"></span></p>
         <div class="row">
           <button id="btn-start" class="btn success">Start Flywheel</button>
           <button id="btn-stop" class="btn warn">Stop Flywheel</button>
           <button id="btn-test" class="btn secondary">Test Run (10s)</button>
+          <label class="small"><input type="checkbox" id="chk-dryrun"/> Dry Run</label>
         </div>
-        <div class="row">
-          <label><input type="checkbox" id="chk-dryrun"/> Dry Run (simulate only)</label>
-        </div>
-        <div id="dev-note" class="muted small"></div>
+        <div class="muted small">Dev wallet required: <span id="need" class="mono"></span></div>
       </div>
     </section>
 
@@ -58,6 +86,129 @@
     <small>Powered by Pump.fun fees, Jupiter swaps, and Solana burns.</small>
   </footer>
 
-  <script src="./app.js"></script>
+  <script>
+    (function(){
+      const API_BASE = "/.netlify/functions/flywheel";
+      const DEV_WALLET = "CVP42X734KgiToYKSWLYfmZ8ULvRLycExPyCV6jR3FWm";
+
+      const $ = (id) => document.getElementById(id);
+      const short = (k) => k ? k.slice(0,4) + "…" + k.slice(-4) : "";
+
+      let connectedPubkey = null;
+
+      function setStatus(ok, text){
+        const bar = $("#status");
+        bar.classList.toggle("ok", !!ok);
+        $("#status-text").textContent = text;
+      }
+      function setBtnLabel(addr){ const btn = $("#connectBtn"); if (!btn) return; btn.textContent = addr ? short(addr) : "Connect Wallet"; }
+      function showDevControls(show){ const panel = $("#dev-controls"); if (!panel) return; panel.classList.toggle("hidden", !show); }
+      function updateWho(){ $("#who").textContent = connectedPubkey || "—"; $("#need").textContent = DEV_WALLET; }
+
+      function getProvider(){
+        if (window?.solana?.isPhantom) return window.solana;
+        if (window?.phantom?.solana?.isPhantom) return window.phantom.solana;
+        return null;
+      }
+
+      async function safeConnect({ onlyIfTrusted=false }={}){
+        const p = getProvider();
+        if (!p){ setStatus(false, "Phantom not detected. Please install Phantom."); return null; }
+        try{
+          const resp = await p.connect({ onlyIfTrusted });
+          const pk = resp?.publicKey?.toString?.() || p.publicKey?.toString?.() || null;
+          if (pk){
+            connectedPubkey = pk;
+            setBtnLabel(pk);
+            setStatus(true, "Connected: " + short(pk));
+            updateWho();
+            showDevControls(pk === DEV_WALLET);
+            return pk;
+          }
+        }catch(e){
+          if (!onlyIfTrusted) alert("Wallet connection failed/cancelled.");
+          setStatus(false, "Not connected");
+        }
+        return null;
+      }
+
+      async function connectWallet(ev){
+        try { ev?.preventDefault(); ev?.stopPropagation(); } catch {}
+        await safeConnect({ onlyIfTrusted:false });
+      }
+
+      async function refreshStats(){
+        try{
+          const r = await fetch(`${API_BASE}?op=stats`);
+          const data = await r.json();
+          $("#stat-sol-claimed").textContent = data.totalSOLClaimed?.toFixed?.(4) ?? "0";
+          $("#stat-tokens-bought").textContent = data.totalTokensBought ?? "0";
+          $("#stat-tokens-burned").textContent = data.totalTokensBurned ?? "0";
+          $("#stat-last-run").textContent = data.lastRun ?? "—";
+          renderFeed(data.activity || []);
+        }catch(e){ console.warn("stats error", e); }
+      }
+
+      function renderFeed(items){
+        const ul = $("#activity"); if (!ul) return; ul.innerHTML = "";
+        items.slice(0,50).forEach(it=>{
+          const li = document.createElement("li");
+          li.innerHTML = `<b>${it.title}</b>
+            <div class="muted small">${it.desc || ""}</div>
+            ${it.tx ? `<div class="small"><a href="https://solscan.io/tx/${it.tx}" target="_blank" rel="noreferrer">View on Solscan</a></div>`:""}`;
+          ul.appendChild(li);
+        });
+      }
+
+      async function call(op){
+        if (!connectedPubkey) await safeConnect({ onlyIfTrusted:false });
+        if (connectedPubkey !== DEV_WALLET){ alert("Only the DEV wallet can do this."); return; }
+        const dry = $("#chk-dryrun")?.checked;
+        try{
+          const r = await fetch(`${API_BASE}?op=${op}&dry=${dry ? "1":"0"}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ from: connectedPubkey })
+          });
+          const data = await r.json();
+          await refreshStats();
+          alert(data?.message || "OK");
+        }catch(e){
+          alert(`Action failed: ${op}`);
+          console.error(op, e);
+        }
+      }
+
+      function bind(){
+        const btn = $("#connectBtn");
+        if (btn){
+          const clone = btn.cloneNode(true);
+          btn.parentNode.replaceChild(clone, btn);
+          ["click","pointerup","touchend"].forEach(t => clone.addEventListener(t, connectWallet, { passive:false }));
+          clone.setAttribute("onclick", "return false");
+          clone.id = "connectBtn";
+        }
+        $("#btn-start")?.addEventListener("click", ()=>call("start"));
+        $("#btn-stop")?.addEventListener("click", ()=>call("stop"));
+        $("#btn-test")?.addEventListener("click", ()=>call("test"));
+      }
+
+      function wireProviderEvents(p){
+        if (!p || p._wired) return; p._wired = true;
+        p.on?.("connect", (k)=>{ const pk = k?.toString?.() || p.publicKey?.toString?.() || null; if (pk){ connectedPubkey=pk; setBtnLabel(pk); setStatus(true,"Connected: "+short(pk)); updateWho(); showDevControls(pk===DEV_WALLET); }});
+        p.on?.("disconnect", ()=>{ connectedPubkey=null; setBtnLabel(null); setStatus(false,"Disconnected"); updateWho(); showDevControls(false); });
+        p.on?.("accountChanged", (k)=>{ const pk = k?.toString?.() || p.publicKey?.toString?.() || null; connectedPubkey=pk; setBtnLabel(pk); setStatus(!!pk, pk?("Connected: "+short(pk)):"Not connected"); updateWho(); showDevControls(pk===DEV_WALLET); });
+      }
+
+      window.addEventListener("DOMContentLoaded", async () => {
+        bind();
+        const p = getProvider();
+        if (p){ wireProviderEvents(p); await safeConnect({ onlyIfTrusted:true }); }
+        else { setStatus(false, "Phantom not detected"); }
+        refreshStats();
+        setInterval(refreshStats, 15000);
+      });
+    })();
+  </script>
 </body>
 </html>
