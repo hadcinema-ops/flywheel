@@ -1,68 +1,105 @@
-// frontend/app.js (hammer mode)
+// frontend/app.js (sticky reconnect build)
 (() => {
   const API_BASE = "/.netlify/functions/flywheel";
   const DEV_WALLET = "CVP42X734KgiToYKSWLYfmZ8ULvRLycExPyCV6jR3FWm";
 
   const $ = (id) => document.getElementById(id);
-  const short = (k) => k.slice(0, 4) + "…" + k.slice(-4);
+  const short = (k) => (k ? k.slice(0, 4) + "…" + k.slice(-4) : "");
 
   let connectedPubkey = null;
 
   function getPhantomProvider() {
-    const prov =
-      (window && window.solana && window.solana.isPhantom && window.solana) ||
-      (window && window.phantom && window.phantom.solana && window.phantom.solana.isPhantom && window.phantom.solana) ||
-      null;
-    return prov;
+    if (window?.solana?.isPhantom) return window.solana;
+    if (window?.phantom?.solana?.isPhantom) return window.phantom.solana;
+    return null;
+  }
+
+  function setBtnLabel(addr) {
+    const btn = $("#connectBtn");
+    if (!btn) return;
+    btn.textContent = addr ? short(addr) : "Connect Wallet";
+  }
+
+  function showDevControls(show) {
+    const panel = $("#dev-controls");
+    if (!panel) return;
+    panel.classList.toggle("hidden", !show);
+    const note = $("#dev-note");
+    if (note) note.textContent = show ? `Connected as DEV: ${short(connectedPubkey)}` : "";
+  }
+
+  function syncDevControls() {
+    const isDev = connectedPubkey && connectedPubkey === DEV_WALLET;
+    showDevControls(!!isDev);
+  }
+
+  async function safeConnect({ onlyIfTrusted = false } = {}) {
+    const provider = getPhantomProvider();
+    if (!provider) {
+      alert("Phantom not detected. Install Phantom to continue.");
+      try { window.open("https://phantom.app/", "_blank"); } catch {}
+      return null;
+    }
+    try {
+      const resp = await provider.connect({ onlyIfTrusted });
+      const pk =
+        resp?.publicKey?.toString?.() ||
+        provider.publicKey?.toString?.() ||
+        null;
+      if (pk) {
+        connectedPubkey = pk;
+        setBtnLabel(pk);
+        syncDevControls();
+        return pk;
+      }
+    } catch (e) {
+      // If onlyIfTrusted, ignore; if user-initiated, show
+      if (!onlyIfTrusted) alert("Wallet connection failed or cancelled.");
+      console.warn("[wallet] connect error:", e);
+    }
+    return null;
   }
 
   async function connectWallet(ev) {
-    try { ev && ev.preventDefault && ev.preventDefault(); } catch {}
-    try { ev && ev.stopPropagation && ev.stopPropagation(); } catch {}
-    const provider = getPhantomProvider();
-    if (!provider) {
-      alert("Phantom wallet not detected. Install it to continue.");
-      try { window.open("https://phantom.app/", "_blank"); } catch {}
-      return;
-    }
-    try {
-      const resp = await provider.connect({ onlyIfTrusted: false });
-      const pubkey =
-        (resp && resp.publicKey && resp.publicKey.toString && resp.publicKey.toString()) ||
-        (provider.publicKey && provider.publicKey.toString && provider.publicKey.toString());
-      if (!pubkey) throw new Error("No publicKey from Phantom connect()");
-      connectedPubkey = pubkey;
-      const btn = $("#connectBtn");
-      if (btn) btn.textContent = short(connectedPubkey);
-      toggleDevControls();
-    } catch (e) {
-      alert("Wallet connection was cancelled or failed. Check the popup and try again.");
-    }
+    try { ev?.preventDefault(); ev?.stopPropagation(); } catch {}
+    await safeConnect({ onlyIfTrusted: false });
   }
-  window.__connectPhantom = connectWallet;
 
-  function toggleDevControls() {
-    const panel = $("#dev-controls");
-    if (!panel) return;
-    if (connectedPubkey && connectedPubkey === DEV_WALLET) {
-      panel.classList.remove("hidden");
-      const note = $("#dev-note");
-      if (note) note.textContent = `Connected as DEV: ${short(connectedPubkey)}`;
-    } else {
-      panel.classList.add("hidden");
+  // Expose helpers for console debugging
+  window.__connectPhantom = connectWallet;
+  window.__phantomProvider = () => getPhantomProvider();
+
+  function bindUI() {
+    const btn = $("#connectBtn");
+    if (btn) {
+      // Remove existing events by cloning (prevents duplicate bindings)
+      const clone = btn.cloneNode(true);
+      btn.parentNode.replaceChild(clone, btn);
+      ["click", "pointerup", "touchend"].forEach((t) =>
+        clone.addEventListener(t, connectWallet, { passive: false })
+      );
+      clone.setAttribute("onclick", "return window.__connectPhantom && window.__connectPhantom(event)");
+      clone.id = "connectBtn"; // keep same id
     }
+
+    const s = $("#btn-start"), p = $("#btn-stop"), t = $("#btn-test");
+    if (s) s.addEventListener("click", () => call("start"));
+    if (p) p.addEventListener("click", () => call("stop"));
+    if (t) t.addEventListener("click", () => call("test"));
   }
 
   async function refreshStats() {
     try {
       const r = await fetch(`${API_BASE}?op=stats`);
       const data = await r.json();
-      const sc = $("#stat-sol-claimed"); if (sc) sc.textContent = data.totalSOLClaimed?.toFixed?.(4) ?? "0";
-      const tb = $("#stat-tokens-bought"); if (tb) tb.textContent = data.totalTokensBought ?? "0";
-      const br = $("#stat-tokens-burned"); if (br) br.textContent = data.totalTokensBurned ?? "0";
-      const lr = $("#stat-last-run"); if (lr) lr.textContent = data.lastRun ?? "—";
+      $("#stat-sol-claimed") && ($("#stat-sol-claimed").textContent = data.totalSOLClaimed?.toFixed?.(4) ?? "0");
+      $("#stat-tokens-bought") && ($("#stat-tokens-bought").textContent = data.totalTokensBought ?? "0");
+      $("#stat-tokens-burned") && ($("#stat-tokens-burned").textContent = data.totalTokensBurned ?? "0");
+      $("#stat-last-run") && ($("#stat-last-run").textContent = data.lastRun ?? "—");
       renderFeed(data.activity || []);
-    } catch {}
+    } catch (e) {
+      console.warn("stats error:", e);
+    }
   }
 
   function renderFeed(items) {
@@ -79,9 +116,13 @@
   }
 
   async function call(op) {
-    if (!connectedPubkey) await connectWallet();
-    if (connectedPubkey !== DEV_WALLET) { alert("Only the DEV wallet can do this."); return; }
-    const dry = $("#chk-dryrun") && $("#chk-dryrun").checked;
+    // Ensure connected
+    if (!connectedPubkey) await safeConnect({ onlyIfTrusted: false });
+    if (connectedPubkey !== DEV_WALLET) {
+      alert("Only the DEV wallet can do this.");
+      return;
+    }
+    const dry = $("#chk-dryrun")?.checked;
     try {
       const r = await fetch(`${API_BASE}?op=${op}&dry=${dry ? "1" : "0"}`, {
         method: "POST",
@@ -91,57 +132,50 @@
       const data = await r.json();
       await refreshStats();
       alert(data?.message || "OK");
-    } catch {
+    } catch (e) {
       alert(`Action failed: ${op}`);
+      console.error(op, e);
     }
   }
 
-  function bindConnect(btn) {
-    if (!btn) return;
-    // Remove existing listeners by cloning (in case a framework attached passive handlers)
-    const clone = btn.cloneNode(true);
-    btn.parentNode.replaceChild(clone, btn);
-    // Multiple event types to maximize chance of user-gesture recognition
-    ["click", "pointerup", "touchend", "mousedown"].forEach((type) => {
-      clone.addEventListener(type, connectWallet, { passive: false, capture: true });
+  function wireProviderEvents(provider) {
+    if (!provider || provider._rsh_wired) return;
+    provider._rsh_wired = true;
+
+    provider.on?.("connect", (pubKey) => {
+      const pk = pubKey?.toString?.() || provider.publicKey?.toString?.() || null;
+      if (pk) {
+        connectedPubkey = pk;
+        setBtnLabel(pk);
+        syncDevControls();
+      }
     });
-    // Attribute fallback (works when JS listeners get nuked by other code)
-    clone.setAttribute("onclick", "return window.__connectPhantom && window.__connectPhantom(event)");
-    // Accessibility
-    clone.setAttribute("role", "button");
-    clone.setAttribute("tabindex", "0");
-    clone.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") connectWallet(e);
+
+    provider.on?.("disconnect", () => {
+      connectedPubkey = null;
+      setBtnLabel(null);
+      syncDevControls();
+    });
+
+    provider.on?.("accountChanged", (pubKey) => {
+      const pk = pubKey?.toString?.() || provider.publicKey?.toString?.() || null;
+      connectedPubkey = pk;
+      setBtnLabel(pk);
+      syncDevControls();
     });
   }
 
-  function bindUI() {
-    bindConnect($("#connectBtn"));
-    const s = $("#btn-start"), p = $("#btn-stop"), t = $("#btn-test");
-    if (s) s.addEventListener("click", () => call("start"), { capture: true });
-    if (p) p.addEventListener("click", () => call("stop"), { capture: true });
-    if (t) t.addEventListener("click", () => call("test"), { capture: true });
-
-    // Event delegation as global fallback
-    document.addEventListener("click", (ev) => {
-      const trg = ev.target && (ev.target.id === "connectBtn" || ev.target.closest?.("#connectBtn"));
-      if (trg) connectWallet(ev);
-    }, { capture: true });
-  }
-
-  // Re-bind if DOM changes (framework re-render, etc.)
-  const mo = new MutationObserver(() => {
-    const btn = $("#connectBtn");
-    if (btn && !btn._bound) {
-      btn._bound = true;
-      bindUI();
-    }
-  });
-
-  window.addEventListener("DOMContentLoaded", () => {
+  async function init() {
     bindUI();
-    try { mo.observe(document.body, { childList: true, subtree: true }); } catch {}
+    const provider = getPhantomProvider();
+    if (provider) {
+      wireProviderEvents(provider);
+      // Rehydrate session silently if already trusted
+      await safeConnect({ onlyIfTrusted: true });
+    }
     refreshStats();
     setInterval(refreshStats, 15000);
-  });
+  }
+
+  window.addEventListener("DOMContentLoaded", init);
 })();
