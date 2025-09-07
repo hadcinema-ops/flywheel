@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Phantom Minimal Connect Test</title>
+<h1>Phantom Minimal Connect Test</h1>
+<p id="env"></p>
+<button id="btn">Connect Wallet</button>
+<pre id="log" style="white-space:pre-wrap;border:1px solid #ccc;padding:8px;max-width:800px;height:240px;overflow:auto;"></pre>
+<script>
+(function(){
+  const logEl = document.getElementById('log');
+  function log(s){ logEl.textContent += s + "\n"; console.log(s); }
+  function inIframe(){ try { return window.self !== window.top; } catch { return true; } }
+  document.getElementById('env').textContent = 'Top-level: ' + (!inIframe()) + ' | URL: ' + window.location.href;
+
+  function getProvider(){
+    if (window?.solana?.isPhantom) return window.solana;
+    if (window?.phantom?.solana?.isPhantom) return window.phantom.solana;
+    return null;
+  }
+
+  let tries=0;
+  (function poll(){
+    const p = getProvider();
+    if (p){
+      log('Provider: FOUND');
+      p.on?.('connect', (k)=> log('event connect: ' + (k?.toString?.() || '')));
+      p.on?.('disconnect', ()=> log('event disconnect'));
+      p.on?.('accountChanged', (k)=> log('event accountChanged: ' + (k?.toString?.() || '')));
+    } else {
+      tries++; if (tries<50) return void setTimeout(poll, 200);
+      log('Provider: NOT FOUND after polling. If this is a Netlify preview iframe or Brave with shields, try new tab or disable shields.');
+    }
+  })();
+
+  document.getElementById('btn').addEventListener('click', async () => {
+    const p = getProvider();
+    if (!p){ alert('Phantom not detected'); log('connect() aborted: no provider'); return; }
+    try{
+      const resp = await p.connect({ onlyIfTrusted: false });
+      const pk = resp?.publicKey?.toString?.() || p.publicKey?.toString?.() || null;
+      log('connect() resolved: ' + (pk || '<no pk>'));
+    }catch(e){
+      log('connect() error: ' + (e?.message || e));
+      alert('Connect failed or cancelled.');
+    }
+  }, { passive:false });
+})();
+</script>
