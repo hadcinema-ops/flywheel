@@ -3,107 +3,72 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Solana Auto Flywheel — Inline Build</title>
+  <title>Solana Auto Flywheel — Durable Connect</title>
   <style>
     :root { --bg:#0c0b10; --card:#151320; --text:#fff; --muted:#a9a6bb; --pri:#8b5cf6; --ok:#22c55e; --warn:#f59e0b; }
     *{box-sizing:border-box} body{margin:0;background:radial-gradient(1200px 600px at 70% -10%, #221a3d 0%, #0c0b10 60%);color:var(--text);font:16px/1.35 Inter,system-ui,Arial}
+    #status{background:#0b1220;border-bottom:1px solid rgba(255,255,255,.08);padding:10px 16px;font-size:13px;display:flex;gap:12px;align-items:center}
+    #status .dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:#ef4444}
+    #status.ok .dot{background:#22c55e}
+    #status .warn .dot{background:#f59e0b}
     .topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:rgba(0,0,0,.35);backdrop-filter:blur(6px);position:sticky;top:0;z-index:9999}
     .brand{display:flex;gap:12px;align-items:center}
     .nav{display:flex;gap:10px;align-items:center}
-    .nav a{color:#ddd;text-decoration:none;padding:8px 10px;border-radius:8px}
-    .nav a:hover{background:rgba(255,255,255,.06)}
     .btn{padding:10px 14px;border-radius:12px;border:0;cursor:pointer;font-weight:700}
     .btn.primary{background:var(--pri);color:#fff}
-    .btn.success{background:var(--ok)}
-    .btn.warn{background:#ef4444}
-    .btn.secondary{background:#334155}
-    .btn.disabled{opacity:.5;cursor:not-allowed}
-    .container{max-width:1100px;margin:40px auto;padding:0 16px}
-    .hero h2{font-size:28px;margin:0 0 8px}
-    .stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:18px}
-    .card{background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:16px}
-    .k{color:var(--muted);font-size:13px}
-    .v{font-size:24px;font-weight:800;margin-top:6px}
-    .actions{margin:26px 0}
-    .row{display:flex;gap:10px;align-items:center;margin:10px 0}
-    .feed ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:360px;overflow:auto}
-    .feed li{background:rgba(255,255,255,.04);border-radius:12px;padding:10px}
-    .footer{opacity:.8;text-align:center;margin:30px 0}
+    .btn.secondary{background:#334155;color:#fff}
+    .container{max-width:980px;margin:30px auto;padding:0 16px}
+    .card{background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:16px;margin-top:16px}
     .hidden{display:none}
-    .muted{color:var(--muted)}
-    .small{font-size:12px}
-    #status{background:#0b1220;border-bottom:1px solid rgba(255,255,255,.08);padding:8px 16px;font-size:13px;display:flex;gap:12px;align-items:center}
-    #status .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:#ef4444}
-    #status.ok .dot{background:#22c55e}
-    #status .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+    #connectBtn { position: relative !important; z-index: 99999 !important; pointer-events: auto !important; }
+    #openTopBtn { display:none }
+    iframe-warning{ display:block; }
   </style>
 </head>
 <body>
-  <div id="status"><span class="dot"></span><span id="status-text">Checking wallet…</span></div>
+  <div id="status"><span class="dot"></span><span id="status-text">Checking wallet…</span><span id="ctx" style="margin-left:auto;opacity:.8;font-size:12px"></span></div>
 
   <header class="topbar">
-    <div class="brand">
-      <h1>Solana Auto Buy &amp; Burn</h1>
-    </div>
+    <div class="brand"><h1>Solana Auto Buy &amp; Burn</h1></div>
     <nav class="nav">
       <button id="connectBtn" class="btn primary">Connect Wallet</button>
+      <button id="openTopBtn" class="btn secondary">Open in new tab</button>
     </nav>
   </header>
 
   <main class="container">
-    <section class="hero">
-      <h2>Automatic Flywheel</h2>
-      <p>Every 20 minutes: claim creator fees → market buy → burn. Public and verifiable.</p>
-      <div class="stats-grid">
-        <div class="card"><div class="k">SOL Claimed</div><div class="v" id="stat-sol-claimed">0</div></div>
-        <div class="card"><div class="k">Tokens Bought</div><div class="v" id="stat-tokens-bought">0</div></div>
-        <div class="card"><div class="k">Tokens Burned</div><div class="v" id="stat-tokens-burned">0</div></div>
-        <div class="card"><div class="k">Last Run</div><div class="v" id="stat-last-run">—</div></div>
+    <div class="card">
+      <div><b>Debug:</b> <span id="debug-line">—</span></div>
+      <div style="margin-top:8px;font-size:13px;opacity:.85">
+        If the connect button doesn’t react, click <b>Open in new tab</b>. Some browsers/extensions don’t inject the wallet into iframes or preview sandboxes.
       </div>
-    </section>
-
-    <section class="actions">
-      <div id="dev-controls" class="card hidden">
-        <h3>Dev Controls</h3>
-        <p class="muted small">Connected: <span id="who" class="mono"></span></p>
-        <div class="row">
-          <button id="btn-start" class="btn success">Start Flywheel</button>
-          <button id="btn-stop" class="btn warn">Stop Flywheel</button>
-          <button id="btn-test" class="btn secondary">Test Run (10s)</button>
-          <label class="small"><input type="checkbox" id="chk-dryrun"/> Dry Run</label>
-        </div>
-        <div class="muted small">Dev wallet required: <span id="need" class="mono"></span></div>
-      </div>
-    </section>
-
-    <section class="feed card">
-      <h3>Recent Activity</h3>
-      <ul id="activity"></ul>
-    </section>
+    </div>
   </main>
-
-  <footer class="footer">
-    <small>Powered by Pump.fun fees, Jupiter swaps, and Solana burns.</small>
-  </footer>
 
   <script>
     (function(){
-      const API_BASE = "/.netlify/functions/flywheel";
       const DEV_WALLET = "CVP42X734KgiToYKSWLYfmZ8ULvRLycExPyCV6jR3FWm";
 
       const $ = (id) => document.getElementById(id);
-      const short = (k) => k ? k.slice(0,4) + "…" + k.slice(-4) : "";
+      const short = (k) => k ? k.slice(0,4)+"…"+k.slice(-4) : "";
 
+      let provider = null;
       let connectedPubkey = null;
+      let tries = 0;
+      const maxTries = 50; // ~10s at 200ms
 
-      function setStatus(ok, text){
-        const bar = $("#status");
-        bar.classList.toggle("ok", !!ok);
-        $("#status-text").textContent = text;
+      function inIframe(){
+        try { return window.self !== window.top; } catch { return true; }
       }
-      function setBtnLabel(addr){ const btn = $("#connectBtn"); if (!btn) return; btn.textContent = addr ? short(addr) : "Connect Wallet"; }
-      function showDevControls(show){ const panel = $("#dev-controls"); if (!panel) return; panel.classList.toggle("hidden", !show); }
-      function updateWho(){ $("#who").textContent = connectedPubkey || "—"; $("#need").textContent = DEV_WALLET; }
+
+      function setStatus(kind, text){
+        const s = $("#status");
+        s.classList.remove("ok","warn");
+        if (kind === "ok") s.classList.add("ok");
+        else if (kind === "warn") s.classList.add("warn");
+        $("#status-text").textContent = text;
+        $("#ctx").textContent = inIframe() ? "context: iframe" : "context: top";
+      }
 
       function getProvider(){
         if (window?.solana?.isPhantom) return window.solana;
@@ -111,102 +76,94 @@
         return null;
       }
 
-      async function safeConnect({ onlyIfTrusted=false }={}){
-        const p = getProvider();
-        if (!p){ setStatus(false, "Phantom not detected. Please install Phantom."); return null; }
-        try{
-          const resp = await p.connect({ onlyIfTrusted });
-          const pk = resp?.publicKey?.toString?.() || p.publicKey?.toString?.() || null;
+      function wireEvents(p){
+        if (!p || p._wired) return; p._wired = true;
+        p.on?.("connect", (k)=>{
+          const pk = k?.toString?.() || p.publicKey?.toString?.() || null;
           if (pk){
             connectedPubkey = pk;
-            setBtnLabel(pk);
-            setStatus(true, "Connected: " + short(pk));
-            updateWho();
-            showDevControls(pk === DEV_WALLET);
-            return pk;
+            $("#connectBtn").textContent = short(pk);
+            $("#debug-line").textContent = "event: connect " + pk;
+            setStatus("ok", "Connected: " + short(pk));
           }
-        }catch(e){
-          if (!onlyIfTrusted) alert("Wallet connection failed/cancelled.");
-          setStatus(false, "Not connected");
-        }
-        return null;
-      }
-
-      async function connectWallet(ev){
-        try { ev?.preventDefault(); ev?.stopPropagation(); } catch {}
-        await safeConnect({ onlyIfTrusted:false });
-      }
-
-      async function refreshStats(){
-        try{
-          const r = await fetch(`${API_BASE}?op=stats`);
-          const data = await r.json();
-          $("#stat-sol-claimed").textContent = data.totalSOLClaimed?.toFixed?.(4) ?? "0";
-          $("#stat-tokens-bought").textContent = data.totalTokensBought ?? "0";
-          $("#stat-tokens-burned").textContent = data.totalTokensBurned ?? "0";
-          $("#stat-last-run").textContent = data.lastRun ?? "—";
-          renderFeed(data.activity || []);
-        }catch(e){ console.warn("stats error", e); }
-      }
-
-      function renderFeed(items){
-        const ul = $("#activity"); if (!ul) return; ul.innerHTML = "";
-        items.slice(0,50).forEach(it=>{
-          const li = document.createElement("li");
-          li.innerHTML = `<b>${it.title}</b>
-            <div class="muted small">${it.desc || ""}</div>
-            ${it.tx ? `<div class="small"><a href="https://solscan.io/tx/${it.tx}" target="_blank" rel="noreferrer">View on Solscan</a></div>`:""}`;
-          ul.appendChild(li);
+        });
+        p.on?.("disconnect", ()=>{
+          connectedPubkey = null;
+          $("#connectBtn").textContent = "Connect Wallet";
+          $("#debug-line").textContent = "event: disconnect";
+          setStatus("", "Not connected");
+        });
+        p.on?.("accountChanged", (k)=>{
+          const pk = k?.toString?.() || p.publicKey?.toString?.() || null;
+          connectedPubkey = pk;
+          $("#connectBtn").textContent = pk ? short(pk) : "Connect Wallet";
+          $("#debug-line").textContent = "event: accountChanged " + (pk || "—");
+          setStatus(pk ? "ok" : "", pk ? ("Connected: " + short(pk)) : "Not connected");
         });
       }
 
-      async function call(op){
-        if (!connectedPubkey) await safeConnect({ onlyIfTrusted:false });
-        if (connectedPubkey !== DEV_WALLET){ alert("Only the DEV wallet can do this."); return; }
-        const dry = $("#chk-dryrun")?.checked;
+      async function pollProvider(){
+        tries++;
+        provider = getProvider();
+        if (provider){
+          $("#debug-line").textContent = "Provider: FOUND";
+          wireEvents(provider);
+          if (provider.publicKey){
+            const pk = provider.publicKey.toString();
+            connectedPubkey = pk;
+            $("#connectBtn").textContent = short(pk);
+            setStatus("ok", "Connected: " + short(pk));
+          } else {
+            setStatus("warn", "Wallet detected, not connected");
+          }
+          return;
+        }
+        if (tries < maxTries){
+          setTimeout(pollProvider, 200);
+        } else {
+          $("#debug-line").textContent = "Provider: NOT FOUND";
+          setStatus("", "Phantom not detected");
+          if (inIframe()){
+            $("#openTopBtn").style.display = "inline-block";
+          }
+        }
+      }
+
+      async function connect(ev){
+        try { ev?.preventDefault(); ev?.stopPropagation(); } catch {}
+        if (!provider){ provider = getProvider(); }
+        if (!provider){
+          setStatus("", "Phantom not detected");
+          if (inIframe()) $("#openTopBtn").style.display = "inline-block";
+          return;
+        }
         try{
-          const r = await fetch(`${API_BASE}?op=${op}&dry=${dry ? "1":"0"}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ from: connectedPubkey })
-          });
-          const data = await r.json();
-          await refreshStats();
-          alert(data?.message || "OK");
+          const resp = await provider.connect({ onlyIfTrusted: false });
+          const pk = resp?.publicKey?.toString?.() || provider.publicKey?.toString?.() || null;
+          if (pk){
+            connectedPubkey = pk;
+            $("#connectBtn").textContent = short(pk);
+            $("#debug-line").textContent = "connect() resolved: " + pk;
+            setStatus("ok", "Connected: " + short(pk));
+          } else {
+            setStatus("warn", "Wallet detected, not connected");
+          }
         }catch(e){
-          alert(`Action failed: ${op}`);
-          console.error(op, e);
+          $("#debug-line").textContent = "connect() threw: " + (e?.message || e);
+          setStatus("", "Not connected");
         }
       }
 
-      function bind(){
-        const btn = $("#connectBtn");
-        if (btn){
-          const clone = btn.cloneNode(true);
-          btn.parentNode.replaceChild(clone, btn);
-          ["click","pointerup","touchend"].forEach(t => clone.addEventListener(t, connectWallet, { passive:false }));
-          clone.setAttribute("onclick", "return false");
-          clone.id = "connectBtn";
-        }
-        $("#btn-start")?.addEventListener("click", ()=>call("start"));
-        $("#btn-stop")?.addEventListener("click", ()=>call("stop"));
-        $("#btn-test")?.addEventListener("click", ()=>call("test"));
+      function openTop(){
+        const href = window.location.href;
+        window.open(href, "_blank", "noopener");
       }
 
-      function wireProviderEvents(p){
-        if (!p || p._wired) return; p._wired = true;
-        p.on?.("connect", (k)=>{ const pk = k?.toString?.() || p.publicKey?.toString?.() || null; if (pk){ connectedPubkey=pk; setBtnLabel(pk); setStatus(true,"Connected: "+short(pk)); updateWho(); showDevControls(pk===DEV_WALLET); }});
-        p.on?.("disconnect", ()=>{ connectedPubkey=null; setBtnLabel(null); setStatus(false,"Disconnected"); updateWho(); showDevControls(false); });
-        p.on?.("accountChanged", (k)=>{ const pk = k?.toString?.() || p.publicKey?.toString?.() || null; connectedPubkey=pk; setBtnLabel(pk); setStatus(!!pk, pk?("Connected: "+short(pk)):"Not connected"); updateWho(); showDevControls(pk===DEV_WALLET); });
-      }
-
-      window.addEventListener("DOMContentLoaded", async () => {
-        bind();
-        const p = getProvider();
-        if (p){ wireProviderEvents(p); await safeConnect({ onlyIfTrusted:true }); }
-        else { setStatus(false, "Phantom not detected"); }
-        refreshStats();
-        setInterval(refreshStats, 15000);
+      window.addEventListener("DOMContentLoaded", () => {
+        $("#connectBtn").addEventListener("click", connect, { passive:false });
+        $("#openTopBtn").addEventListener("click", openTop);
+        if (inIframe()) $("#openTopBtn").style.display = "inline-block";
+        pollProvider();
       });
     })();
   </script>
